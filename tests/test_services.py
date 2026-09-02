@@ -25,6 +25,29 @@ class FakeProvider:
         page = int(options["page"])
         return ([{"product_id": f"RJ{page:02}{index:05}"} for index in range(30)], page < 2)
 
+    async def get_review_overview(self, product_id: str, **options: object) -> dict[str, object]:
+        return {
+            "product_id": product_id,
+            "product_name": "untrusted work",
+            "total_reviews": 10_000,
+            "reviews_available": True,
+        }
+
+    async def get_review_page(self, product_id: str, **options: object) -> list[dict[str, object]]:
+        page = int(options["page"])
+        limit = int(options["limit"])
+        start = (page - 1) * limit
+        return [
+            {
+                "review_id": str(index),
+                "reviewer_name": "untrusted reviewer",
+                "title": f"review {index}",
+                "review": "untrusted body",
+                "review_truncated": False,
+            }
+            for index in range(start, min(start + limit, 10_000))
+        ]
+
 
 def service() -> tuple[DlsiteService, FakeProvider]:
     provider = FakeProvider()
@@ -74,3 +97,77 @@ async def test_search_cursor_rejects_changed_query() -> None:
     with pytest.raises(ServiceError) as caught:
         await instance.search("game", "maniax", first["page"]["next_cursor"], 10, "ja_JP", "ko_KR")
     assert caught.value.code is ErrorCode.CURSOR_MISMATCH
+
+
+@pytest.mark.asyncio
+async def test_review_cursor_can_traverse_a_ten_thousand_item_corpus() -> None:
+    instance, _ = service()
+    cursor = ""
+    seen: list[str] = []
+    first: dict[str, object] | None = None
+    for _ in range(500):
+        page = await instance.work_get("RJ294126", "reviews", "ja_JP", "ko_KR", 100, cursor, 100)
+        first = first or page
+        page_ids = [str(item["review_id"]) for item in page["items"]]
+        assert not set(page_ids).intersection(seen)
+        seen.extend(page_ids)
+        cursor = str(page["page"]["next_cursor"] or "")
+        if not cursor:
+            break
+    assert first is not None
+    assert first["data"]["total_reviews_snapshot"] == 10_000
+    assert "items[].review" in first["meta"]["untrusted_fields"]
+    assert seen == [str(index) for index in range(10_000)]
+    assert page["data"]["complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_review_cursor_rejects_changed_text_limit() -> None:
+    instance, _ = service()
+    first = await instance.work_get("RJ294126", "reviews", "ja_JP", "ko_KR", 1200, "", 5)
+    with pytest.raises(ServiceError) as caught:
+        await instance.work_get(
+            "RJ294126",
+            "reviews",
+            "ja_JP",
+            "ko_KR",
+            1000,
+            first["page"]["next_cursor"],
+            5,
+        )
+    assert caught.value.code is ErrorCode.CURSOR_MISMATCH
+
+
+@pytest.mark.asyncio
+async def test_review_page_shortens_without_skipping_when_byte_budget_is_hit() -> None:
+    instance, provider = service()
+
+    async def large_page(product_id: str, **options: object) -> list[dict[str, object]]:
+        page = int(options["page"])
+        limit = int(options["limit"])
+        start = (page - 1) * limit
+        return [
+            {
+                "review_id": str(index),
+                "reviewer_name": "reader",
+                "title": "title",
+                "review": "x" * 1200,
+                "review_truncated": False,
+            }
+            for index in range(start, start + limit)
+        ]
+
+    provider.get_review_page = large_page  # type: ignore[method-assign]
+    first = await instance.work_get("RJ294126", "reviews", "ja_JP", "ko_KR", 1200, "", 20)
+    assert 1 <= first["page"]["returned"] < 20
+    second = await instance.work_get(
+        "RJ294126",
+        "reviews",
+        "ja_JP",
+        "ko_KR",
+        1200,
+        first["page"]["next_cursor"],
+        20,
+    )
+    assert second["items"][0]["review_id"] == str(first["page"]["returned"])
+    assert any("byte budget" in warning for warning in first["meta"]["warnings"])

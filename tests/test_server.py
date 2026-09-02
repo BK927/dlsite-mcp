@@ -29,6 +29,25 @@ class FakeProvider:
     ) -> tuple[list[dict[str, object]], bool]:
         return ([{"product_id": "RJ123456", "title": "title"}], False)
 
+    async def get_review_overview(self, product_id: str, **options: object) -> dict[str, object]:
+        return {
+            "product_id": product_id,
+            "product_name": "title",
+            "total_reviews": 1,
+            "reviews_available": True,
+        }
+
+    async def get_review_page(self, product_id: str, **options: object) -> list[dict[str, object]]:
+        return [
+            {
+                "review_id": "1",
+                "reviewer_name": "reader",
+                "title": "review title",
+                "review": "review body",
+                "review_truncated": False,
+            }
+        ]
+
 
 def make_server():
     return create_server(
@@ -84,6 +103,15 @@ async def test_tool_result_does_not_duplicate_structured_data() -> None:
     result = await tool.fn("RJ294126")
     assert result.structured_content["data"]["product_id"] == "RJ294126"
     assert "title" not in result.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_review_result_is_structured_and_marks_user_text_untrusted() -> None:
+    tool = make_server()._tool_manager.get_tool("dlsite_work_get")
+    result = await tool.fn("RJ294126", view="reviews")
+    assert result.structured_content["items"][0]["review"] == "review body"
+    assert "items[].review" in result.structured_content["meta"]["untrusted_fields"]
+    assert "review body" not in result.content[0].text
 
 
 async def _asgi_call(app, path: str, headers: list[tuple[bytes, bytes]] | None = None):

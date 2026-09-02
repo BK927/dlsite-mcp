@@ -1,7 +1,7 @@
 [project]
 name = "dlsite-mcp"
-version = "1.0.0"
-description = "Compact read-only MCP server for public DLsite work metadata, search, and makers."
+version = "1.1.0"
+description = "Compact read-only MCP server for public DLsite works, reviews, search, and makers."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

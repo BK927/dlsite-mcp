@@ -29,7 +29,7 @@ LOCALE_CURRENCY = {
     "zh_CN": "CNY",
     "zh_TW": "TWD",
 }
-USER_AGENT = "dlsite-mcp/1.0 (+https://github.com/BK927/dlsite-mcp)"
+USER_AGENT = "dlsite-mcp/1.1 (+https://github.com/BK927/dlsite-mcp)"
 
 
 def normalize_work_id(reference: str) -> str:
@@ -152,6 +152,61 @@ def parse_search_html(
             }
         )
     return items, bool(soup.select_one("a[href*='/page/2'], a.next"))
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_review_payload(payload: dict[str, Any], *, max_chars: int) -> list[dict[str, Any]]:
+    """Normalize DLsite's public review JSON without retaining undocumented fields."""
+    items: list[dict[str, Any]] = []
+    for raw in payload.get("review_list") or []:
+        if not isinstance(raw, dict) or not raw.get("member_review_id"):
+            continue
+        title = str(raw.get("review_title") or "")
+        text = str(raw.get("review_text") or "")
+        translated_locale = None
+        for translation in raw.get("translations") or []:
+            if not isinstance(translation, dict):
+                continue
+            translated_title = translation.get("title")
+            translated_text = translation.get("text")
+            if translated_title or translated_text:
+                title = str(translated_title or title)
+                text = str(translated_text or text)
+                translated_locale = translation.get("locale")
+                break
+        truncated = len(text) > max_chars
+        if truncated:
+            text = text[:max_chars] + "…"
+        genres = raw.get("genre") or {}
+        items.append(
+            {
+                "review_id": str(raw["member_review_id"]),
+                "reviewer_id": str(raw.get("reviewer_id") or "") or None,
+                "reviewer_name": str(raw.get("nick_name") or "") or None,
+                "title": title or None,
+                "review": text,
+                "rating": _optional_int(raw.get("rate")),
+                "recommended": str(raw.get("recommend") or "0") == "1",
+                "spoiler": str(raw.get("spoiler") or "0") == "1",
+                "purchased": str(raw.get("is_purchased") or "0") == "1",
+                "posted_at": raw.get("entry_date"),
+                "published_at": raw.get("regist_date"),
+                "helpful_count": _optional_int(raw.get("good_review")),
+                "unhelpful_count": _optional_int(raw.get("bad_review")),
+                "reviewer_rank": str(raw.get("reviewer_rank") or "") or None,
+                "genres": list(genres.values()) if isinstance(genres, dict) else [],
+                "original_locale": raw.get("original_lang"),
+                "translated_locale": translated_locale,
+                "review_truncated": truncated,
+            }
+        )
+    return items
 
 
 class DlsiteProvider:
@@ -290,5 +345,67 @@ class DlsiteProvider:
                 return [], False
             # DLsite renders up to 30 records per page. A full page can continue.
             return items, len(items) >= 30
+
+        return await self._run(load())
+
+    async def get_review_overview(self, product_id: str, *, locale: str) -> dict[str, Any]:
+        async def load() -> dict[str, Any]:
+            params = {
+                "product_id": product_id,
+                "limit": 1,
+                "mix_pickup": "true",
+                "locale": locale,
+            }
+            async with DlsiteAPI(locale=locale) as api:
+                self._prepare(api)
+                async with api.get(
+                    "https://www.dlsite.com/maniax/api/review", params=params
+                ) as response:
+                    payload = await response.json()
+            if not isinstance(payload, dict) or not payload.get("is_success"):
+                raise ServiceError(
+                    ErrorCode.UPSTREAM_ERROR,
+                    "DLsite could not return the public review index.",
+                    retryable=True,
+                )
+            return {
+                "product_id": product_id,
+                "product_name": payload.get("product_name"),
+                "total_reviews": max(0, _optional_int(payload.get("count")) or 0),
+                "reviews_available": not bool(payload.get("review_deny")),
+            }
+
+        return await self._run(load())
+
+    async def get_review_page(
+        self,
+        product_id: str,
+        *,
+        page: int,
+        limit: int,
+        locale: str,
+        max_chars: int,
+    ) -> list[dict[str, Any]]:
+        async def load() -> list[dict[str, Any]]:
+            params = {
+                "product_id": product_id,
+                "limit": limit,
+                "page": page,
+                "order": "regist_d",
+                "locale": locale,
+            }
+            async with DlsiteAPI(locale=locale) as api:
+                self._prepare(api)
+                async with api.get(
+                    "https://www.dlsite.com/maniax/api/review", params=params
+                ) as response:
+                    payload = await response.json()
+            if not isinstance(payload, dict) or not payload.get("is_success"):
+                raise ServiceError(
+                    ErrorCode.UPSTREAM_ERROR,
+                    "DLsite could not return the public review page.",
+                    retryable=True,
+                )
+            return parse_review_payload(payload, max_chars=max_chars)
 
         return await self._run(load())

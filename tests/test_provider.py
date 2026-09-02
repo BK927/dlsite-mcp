@@ -6,6 +6,7 @@ from dlsite_mcp.contracts import ErrorCode, ServiceError
 from dlsite_mcp.provider import (
     normalize_maker_id,
     normalize_work_id,
+    parse_review_payload,
     parse_search_html,
     validate_locale,
 )
@@ -70,5 +71,52 @@ def test_search_parser_normalizes_public_fields() -> None:
             "review_count": 7,
             "image": "https://img.dlsite.jp/RJ123456.webp",
             "url": "https://www.dlsite.com/maniax/work/=/product_id/RJ123456.html",
+        }
+    ]
+
+
+def test_review_parser_normalizes_and_bounds_untrusted_text() -> None:
+    payload = {
+        "review_list": [
+            {
+                "member_review_id": "123",
+                "reviewer_id": "REV001",
+                "nick_name": "reader",
+                "review_title": "title",
+                "review_text": "abcdef",
+                "rate": "5",
+                "recommend": "1",
+                "spoiler": "1",
+                "is_purchased": "1",
+                "good_review": "7",
+                "bad_review": "2",
+                "entry_date": "2026-01-01 00:00:00",
+                "regist_date": "2026-01-02 00:00:00",
+                "genre": {"1": "ASMR"},
+                "original_lang": "ja_JP",
+                "translations": [{"locale": "ko_KR", "title": "번역", "text": "가나다라마바사"}],
+            }
+        ]
+    }
+    assert parse_review_payload(payload, max_chars=5) == [
+        {
+            "review_id": "123",
+            "reviewer_id": "REV001",
+            "reviewer_name": "reader",
+            "title": "번역",
+            "review": "가나다라마…",
+            "rating": 5,
+            "recommended": True,
+            "spoiler": True,
+            "purchased": True,
+            "posted_at": "2026-01-01 00:00:00",
+            "published_at": "2026-01-02 00:00:00",
+            "helpful_count": 7,
+            "unhelpful_count": 2,
+            "reviewer_rank": None,
+            "genres": ["ASMR"],
+            "original_locale": "ja_JP",
+            "translated_locale": "ko_KR",
+            "review_truncated": True,
         }
     ]

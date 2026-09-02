@@ -2,7 +2,7 @@
 
 Compact, read-only MCP server for public DLsite metadata. It uses
 [`dlsite-async`](https://github.com/bhrevol/dlsite-async) for work and maker
-lookups and a small public-page adapter for keyword search.
+lookups and small public adapters for keyword search and reviews.
 
 No DLsite login is accepted or stored. Purchased works, downloads, wishlists,
 cart actions, and DLsite Play are deliberately out of scope.
@@ -11,7 +11,7 @@ cart actions, and DLsite Play are deliberately out of scope.
 
 | Tool | Purpose |
 | --- | --- |
-| `dlsite_work_get` | Read summary or detailed metadata for a product ID/URL; accepts up to 20 summaries or 5 detailed works. |
+| `dlsite_work_get` | Read summary/details or public review bodies for a product ID/URL; reviews use signed continuation cursors. |
 | `dlsite_search` | Search one DLsite section with bounded results and signed continuation cursors. |
 | `dlsite_maker_get` | Resolve a public circle, brand, or publisher profile. |
 
@@ -20,6 +20,15 @@ help lives in `dlsite://catalog` and `dlsite://schema/{operation}` so idle
 context stays small. Successes use a stable `structuredContent` envelope;
 human-readable `content` is only one line. Publisher-controlled fields are
 listed under `meta.untrusted_fields`.
+
+Use `dlsite_work_get` with `view="reviews"` for review bodies. A response may
+return fewer items than `limit` to keep each review intact inside the MCP byte
+budget; follow `page.next_cursor` until `data.complete` is true. There is no
+corpus-size cap, so works with tens of thousands of reviews remain traversable.
+The cursor also records the last review ID and the initial total to reduce
+duplicates or gaps if new reviews arrive during a long traversal. Review text
+defaults to 1,200 characters per item and can be raised to 4,000. Cursors expire
+after 24 hours by default; `DLSITE_CURSOR_TTL_SECONDS` can extend this to 7 days.
 
 Search supports `maniax`, `home`, `books`, `soft`, `pro`, and `appx`. Direct
 work lookup also supports `comic`/comipo product IDs such as `BJ370220`;
