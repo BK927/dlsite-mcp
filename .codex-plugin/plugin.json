@@ -1,0 +1,35 @@
+{
+  "name": "dlsite-mcp",
+  "version": "1.0.0",
+  "description": "Read-only public DLsite work, search, price, rating, and maker research.",
+  "author": {
+    "name": "BK927",
+    "url": "https://github.com/BK927"
+  },
+  "homepage": "https://github.com/BK927/dlsite-mcp",
+  "repository": "https://github.com/BK927/dlsite-mcp",
+  "license": "MIT",
+  "keywords": [
+    "dlsite",
+    "doujin",
+    "games",
+    "mcp"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "DLsite MCP",
+    "shortDescription": "Research public DLsite works, prices, ratings, and makers.",
+    "longDescription": "A compact, read-only DLsite research plugin for public work metadata, keyword search, regional prices, ratings, creators, genres, samples, circles, brands, and publishers. No DLsite login or account access.",
+    "developerName": "BK927",
+    "category": "Productivity",
+    "capabilities": [
+      "Read-only DLsite research",
+      "Local and remote MCP"
+    ],
+    "defaultPrompt": [
+      "Find this DLsite work and summarize its public metadata.",
+      "Search DLsite for this title and compare the results.",
+      "Check this DLsite work's KRW price, rating, and creators."
+    ]
+  }
+}

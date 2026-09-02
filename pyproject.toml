@@ -1,0 +1,51 @@
+[project]
+name = "dlsite-mcp"
+version = "1.0.0"
+description = "Compact read-only MCP server for public DLsite work metadata, search, and makers."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "BK927" }]
+keywords = ["dlsite", "mcp", "model-context-protocol", "doujin"]
+dependencies = [
+    "beautifulsoup4==4.14.3",
+    "dlsite-async==0.10.2",
+    "mcp>=2.0,<3",
+    "pydantic>=2.12,<3",
+    "uvicorn>=0.41,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9,<10",
+    "pytest-asyncio>=1.3,<2",
+    "ruff>=0.15,<1",
+]
+gcp = ["google-cloud-firestore>=2.21,<3"]
+
+[project.scripts]
+dlsite-mcp = "dlsite_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/BK927/dlsite-mcp"
+Repository = "https://github.com/BK927/dlsite-mcp"
+Upstream = "https://github.com/bhrevol/dlsite-async"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dlsite_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "BLE", "I"]
+ignore = ["E501"]

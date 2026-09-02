@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dlsite-mcp": {
+      "type": "stdio",
+      "command": "dlsite-mcp"
+    }
+  }
+}
