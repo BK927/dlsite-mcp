@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from mcp.server.auth.provider import (
     AccessToken,
@@ -284,11 +284,13 @@ class PersonalOAuthProvider:
         if not self._verify(transaction, "authorization_request"):
             return Response("Authorization request expired or invalid", status_code=400)
         error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
+        issuer_path = urlsplit(self.issuer).path.rstrip("/")
+        login_action = f"{issuer_path}/oauth/login"
         page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Connect DLsite MCP</title><style>body{{font:16px system-ui;max-width:32rem;margin:12vh auto;padding:1.5rem;color:#17202a}}input,button{{box-sizing:border-box;width:100%;padding:.8rem;margin:.4rem 0}}button{{cursor:pointer}}.error{{color:#b42318}}</style></head>
 <body><h1>Connect DLsite MCP</h1><p>Enter the private access key for this personal server.</p>{error_html}
-<form method="post" action="/oauth/login"><input type="hidden" name="transaction" value="{html.escape(transaction, quote=True)}">
+<form method="post" action="{html.escape(login_action, quote=True)}"><input type="hidden" name="transaction" value="{html.escape(transaction, quote=True)}">
 <label>Access key<input type="password" name="access_key" autocomplete="current-password" required autofocus></label>
 <button type="submit">Authorize ChatGPT</button></form></body></html>"""
         return HTMLResponse(

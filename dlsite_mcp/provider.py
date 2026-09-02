@@ -29,7 +29,7 @@ LOCALE_CURRENCY = {
     "zh_CN": "CNY",
     "zh_TW": "TWD",
 }
-USER_AGENT = "dlsite-mcp/1.1 (+https://github.com/BK927/dlsite-mcp)"
+USER_AGENT = "dlsite-mcp/1.1.1 (+https://github.com/BK927/dlsite-mcp)"
 
 
 def normalize_work_id(reference: str) -> str:

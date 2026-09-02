@@ -49,7 +49,7 @@ class ServerDependencies:
 
 CATALOG = {
     "service": "dlsite-mcp",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "authentication_required_by_dlsite": False,
     "capabilities": {
         "works": "Public summary, detailed metadata, or cursor-paginated review bodies.",
@@ -91,7 +91,7 @@ SCHEMAS = {
 def create_server(dependencies: ServerDependencies, oauth: OAuthRuntime | None = None) -> MCPServer:
     server = MCPServer(
         "dlsite_mcp",
-        version="1.1.0",
+        version="1.1.1",
         auth_server_provider=oauth.provider if oauth else None,
         auth=oauth.settings if oauth else None,
         instructions=(
