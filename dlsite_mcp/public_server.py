@@ -67,7 +67,7 @@ SCHEMAS = {
     "dlsite_work_get": {
         "work": "Single product ID or absolute DLsite URL, or array of up to 20; details arrays are limited to 5. Multiple IDs in one string are rejected.",
         "batch_errors": "All-or-error; details.product_id identifies the failed work.",
-        "metadata": "Details preserve source-language values. description_source identifies the SEO summary. Extraction problems appear in meta.warnings.",
+        "metadata": "Details preserve source-language values. description_source identifies the SEO summary. Extraction problems appear in meta.warnings; metadata_diagnostics lists failed fields and bounded unrecognized row labels as untrusted source text.",
         "view": ["summary", "details", "reviews"],
         "locale": CATALOG["locales"],
         "price_locale": CATALOG["locales"],

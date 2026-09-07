@@ -49,6 +49,14 @@ identifies this source. Unrecognized rows, failed field extraction, and absent
 detail tables produce `meta.warnings`. Summary view intentionally omits HTML-only
 detail fields. A null field does not by itself mean that parsing failed.
 
+When fields fail to parse or row headings are unrecognized, details also include
+`metadata_diagnostics.failed_fields` (canonical field names) and
+`metadata_diagnostics.unrecognized_row_labels` (untrusted source headings).
+The latter is limited to eight distinct labels of 80 characters each;
+`unrecognized_row_count` and `labels_truncated` indicate the full row count and
+whether labels were shortened or omitted. Unknown rows have no assumed field
+mapping: for example, DLsite's `Miscellaneous`/`기타` row is reported explicitly.
+
 Search applies DLsite's native category/audience filters, rather than relying on
 the storefront URL prefix. `data.site` is the requested section;
 `data.applied_filters` records the filters and `data.result_sites` records the

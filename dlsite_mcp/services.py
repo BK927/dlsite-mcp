@@ -115,6 +115,7 @@ class DlsiteService:
             "data.writer[]",
             "data.genre[]",
             "data.language",
+            "data.metadata_diagnostics.unrecognized_row_labels[]",
             "data.label",
             "data.event[]",
             "data.work_image",

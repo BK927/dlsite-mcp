@@ -110,6 +110,10 @@ async def test_metadata_warnings_survive_cache_and_are_not_exposed_as_internal_f
         result = await instance.work_get("RJ01655815", "details", "ko_KR", "ko_KR", 1200)
         assert "_warnings" not in result["data"]
         assert result["meta"]["warnings"] == ["RJ01655815: Missing table."]
+        assert (
+            "data.metadata_diagnostics.unrecognized_row_labels[]"
+            in result["meta"]["untrusted_fields"]
+        )
 
 
 @pytest.mark.asyncio

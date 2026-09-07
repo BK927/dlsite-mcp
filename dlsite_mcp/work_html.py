@@ -38,7 +38,16 @@ ROWS = {
     "Scenario": ("scenario", "シナリオ", "시나리오", "剧本", "劇本"),
     "Voice Actor": ("voice_actor", "声優", "성우", "声优", "聲優"),
     "Writer": ("writer", "作家"),
-    "Series": ("title_name_masked", "シリーズ", "シリーズ名", "Series name", "시리즈", "系列"),
+    "Series": (
+        "title_name_masked",
+        "シリーズ",
+        "シリーズ名",
+        "Series name",
+        "시리즈",
+        "시리즈명",
+        "系列",
+        "系列名",
+    ),
     "Supported languages": ("language", "対応言語", "대응 언어", "支持的语言", "對應語言"),
 }
 HEADINGS = {
@@ -62,7 +71,14 @@ JSON_HEADINGS = {
     "Product format",
     "작품 형식",
 }
-KOREAN_PROMO = re.compile(r'"DLsite[^"\n]*"(?:은|는)\s.*"DLsite"!\s*$', re.DOTALL)
+# Storefronts use different quotation marks. Match the complete shop footer,
+# including its download-shop wording, so ordinary DLsite mentions survive.
+KOREAN_PROMO = re.compile(
+    r"""(?P<quote>["'])DLsite[^"'\n]*(?P=quote)(?:은|는)\s.*다운로드\s*(?:숍|샵).*(?P=quote)DLsite(?P=quote)!\s*$""",
+    re.DOTALL,
+)
+MAX_DIAGNOSTIC_LABELS = 8
+MAX_DIAGNOSTIC_LABEL_CHARS = 80
 MONTHS = {
     name: index
     for index, name in enumerate(
@@ -91,12 +107,13 @@ def parse_work_details(html: str) -> tuple[dict[str, Any], list[str]]:
     headers = soup.select("#work_maker th, #work_outline th, dl.c-productInfo__box dt")
     expected = set()
     overrides: dict[str, Any] = {}
-    unknown = False
+    unknown_labels: list[str] = []
     for header in headers:
         label = unicodedata.normalize("NFKC", header.get_text(" ", strip=True))
         mapping = HEADINGS.get(label)
         if not mapping:
-            unknown |= label not in JSON_HEADINGS
+            if label not in JSON_HEADINGS:
+                unknown_labels.append(" ".join(label.split()))
             continue
         canonical, field = mapping
         expected.add(field)
@@ -120,8 +137,23 @@ def parse_work_details(html: str) -> tuple[dict[str, Any], list[str]]:
     missing = sorted(field for field in expected if data.get(field) in (None, "", []))
     if missing:
         warnings.append("Work metadata could not be parsed: " + ", ".join(missing) + ".")
-    if unknown:
-        warnings.append("Some work metadata rows were not recognized by the parser.")
+    if unknown_labels:
+        warnings.append(
+            "Some work metadata rows were not recognized by the parser; "
+            "see metadata_diagnostics.unrecognized_row_labels (untrusted source text)."
+        )
+    if unknown_labels or missing:
+        unique_labels = list(dict.fromkeys(unknown_labels))
+        data["metadata_diagnostics"] = {
+            "unrecognized_row_labels": [
+                label[:MAX_DIAGNOSTIC_LABEL_CHARS]
+                for label in unique_labels[:MAX_DIAGNOSTIC_LABELS]
+            ],
+            "unrecognized_row_count": len(unknown_labels),
+            "labels_truncated": len(unique_labels) > MAX_DIAGNOSTIC_LABELS
+            or any(len(label) > MAX_DIAGNOSTIC_LABEL_CHARS for label in unique_labels),
+            "failed_fields": missing,
+        }
     if not headers:
         warnings.append("The source page did not expose a recognized work metadata table.")
     return data, warnings
