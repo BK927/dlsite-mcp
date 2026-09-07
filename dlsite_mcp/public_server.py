@@ -65,7 +65,9 @@ CATALOG = {
 
 SCHEMAS = {
     "dlsite_work_get": {
-        "work": "Product ID, URL, or array of up to 20; details arrays are limited to 5.",
+        "work": "Single product ID or absolute DLsite URL, or array of up to 20; details arrays are limited to 5. Multiple IDs in one string are rejected.",
+        "batch_errors": "All-or-error; details.product_id identifies the failed work.",
+        "metadata": "Details preserve source-language values. description_source identifies the SEO summary. Extraction problems appear in meta.warnings.",
         "view": ["summary", "details", "reviews"],
         "locale": CATALOG["locales"],
         "price_locale": CATALOG["locales"],
@@ -76,13 +78,14 @@ SCHEMAS = {
     "dlsite_search": {
         "query": "1..200 characters",
         "site": CATALOG["search_sections"],
+        "scope": "Native section filters are returned in data.applied_filters; data.result_sites lists returned storefronts, which may differ. Missing source review counts remain null with a warning.",
         "cursor": "Opaque signed continuation cursor.",
         "limit": "1..30",
         "locale": CATALOG["locales"],
         "price_locale": CATALOG["locales"],
     },
     "dlsite_maker_get": {
-        "maker": "RG/BG/VG maker ID or maker profile URL.",
+        "maker": "Single RG/BG/VG maker ID or absolute DLsite maker profile URL.",
         "locale": CATALOG["locales"],
     },
 }

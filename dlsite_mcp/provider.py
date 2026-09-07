@@ -9,7 +9,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote_plus, unquote, urlsplit
 
 import aiohttp
 from bs4 import BeautifulSoup, Tag
@@ -17,10 +17,21 @@ from dlsite_async import DlsiteAPI
 from dlsite_async.exceptions import DlsiteError
 
 from .contracts import ErrorCode, ServiceError
+from .work_html import parse_work_details
 
 WORK_ID_RE = re.compile(r"(?<![A-Z0-9])([A-Z]{2}\d{5,10})(?!\d)", re.IGNORECASE)
 MAKER_ID_RE = re.compile(r"(?<![A-Z0-9])([RBV]G\d{4,10})(?!\d)", re.IGNORECASE)
 SUPPORTED_SITES = {"maniax", "home", "books", "soft", "pro", "appx"}
+# Match the filters emitted by DLsite's section selector. Adult storefronts
+# include all-ages works for the same audience; their URL prefix is not a filter.
+SEARCH_FILTERS = {
+    "home": {"work_category": "doujin", "age_category": "general"},
+    "maniax": {"work_category": "doujin", "sex_category": "male"},
+    "books": {"work_category": "books", "sex_category": "male"},
+    "soft": {"work_category": "pc", "age_category": "general"},
+    "pro": {"work_category": "pc", "sex_category": "male"},
+    "appx": {"work_category": "app", "sex_category": "male"},
+}
 SUPPORTED_LOCALES = {"ja_JP", "en_US", "ko_KR", "zh_CN", "zh_TW"}
 LOCALE_CURRENCY = {
     "ja_JP": "JPY",
@@ -33,25 +44,51 @@ USER_AGENT = "dlsite-mcp/1.1.1 (+https://github.com/BK927/dlsite-mcp)"
 
 
 def normalize_work_id(reference: str) -> str:
-    match = WORK_ID_RE.search(reference.strip())
-    if not match:
+    if len(WORK_ID_RE.findall(reference)) > 1 and "://" not in reference:
         raise ServiceError(
             ErrorCode.INVALID_ARGUMENT,
-            "work must be a DLsite product ID or product URL.",
-            details={"examples": ["RJ294126", "BJ370220"]},
+            "A work string must contain exactly one reference; use an array for multiple works.",
         )
-    return match.group(1).upper()
+    return _normalize_reference(
+        reference, WORK_ID_RE, r"/[^/]+/(?:work|announce)/=/product_id/", "work"
+    )
 
 
 def normalize_maker_id(reference: str) -> str:
-    match = MAKER_ID_RE.search(reference.strip())
-    if not match:
-        raise ServiceError(
-            ErrorCode.INVALID_ARGUMENT,
-            "maker must be a DLsite maker ID or maker profile URL.",
-            details={"examples": ["RG51931", "BG01675"]},
-        )
-    return match.group(1).upper()
+    return _normalize_reference(
+        reference, MAKER_ID_RE, r"/[^/]+/circle/profile/=/maker_id/", "maker"
+    )
+
+
+def _normalize_reference(reference: str, pattern: re.Pattern[str], path: str, kind: str) -> str:
+    reference = reference.strip()
+    if pattern.fullmatch(reference):
+        return reference.upper()
+    try:
+        url = urlsplit(reference)
+        if (
+            url.scheme in {"http", "https"}
+            and url.hostname in {"dlsite.com", "www.dlsite.com"}
+            and url.username is None
+            and url.password is None
+            and url.port in {None, 80, 443}
+        ):
+            match = re.fullmatch(path + r"([^/]+)\.html/?", unquote(url.path), re.IGNORECASE)
+            if match and pattern.fullmatch(match[1]):
+                return match[1].upper()
+    except ValueError:
+        pass
+    raise ServiceError(
+        ErrorCode.INVALID_ARGUMENT,
+        f"{kind} must be one DLsite ID or an absolute DLsite {kind} URL.",
+    )
+
+
+def search_url(query: str, site: str, page: int) -> str:
+    filters = "/".join(f"{key}/{value}" for key, value in SEARCH_FILTERS[site].items())
+    # DLsite's form encodes spaces as '+'. A '%20' in this path can return 403.
+    base = f"https://www.dlsite.com/{site}/fsr/=/{filters}/keyword/{quote_plus(query, safe='')}/per_page/30"
+    return base if page == 1 else f"{base}/page/{page}"
 
 
 def validate_locale(locale: str) -> str:
@@ -258,13 +295,27 @@ class DlsiteProvider:
         async def load() -> dict[str, Any]:
             async with DlsiteAPI(locale=locale) as api:
                 self._prepare(api)
-                work = await (
-                    api.get_work(product_id) if view == "details" else api.product_info(product_id)
-                )
+                work = await api.product_info(product_id)
+                details: dict[str, Any] = {}
+                warnings: list[str] = []
+                if view == "details":
+                    for kind in ("work", "announce"):
+                        detail_url = f"https://www.dlsite.com/{work.site_id}/{kind}/=/product_id/{product_id}.html/"
+                        try:
+                            async with api.get(detail_url) as response:
+                                details, warnings = parse_work_details(await response.text())
+                            break
+                        except aiohttp.ClientResponseError as exc:
+                            if exc.status != 404:
+                                raise
+                    else:
+                        warnings.append("The source did not expose a work details page.")
                 url = "https://www.dlsite.com/maniax/product/info/ajax"
                 async with api.get(url, params={"product_id": product_id}) as response:
                     raw = (await response.json()).get(product_id, {})
             data = _jsonable(work)
+            data.update(_jsonable(details))
+            data["_warnings"] = warnings
             if data.get("description") and len(data["description"]) > max_chars:
                 data["description"] = data["description"][:max_chars] + "…"
                 data["description_truncated"] = True
@@ -331,11 +382,7 @@ class DlsiteProvider:
         price_locale: str,
     ) -> tuple[list[dict[str, Any]], bool]:
         async def load() -> tuple[list[dict[str, Any]], bool]:
-            encoded = quote(query, safe="")
-            base = f"https://www.dlsite.com/{site}/fsr/=/keyword/{encoded}/per_page/30"
-            # DLsite returns 404 for an explicit `/page/1` even though later
-            # page numbers use that segment.
-            url = base if page == 1 else f"{base}/page/{page}"
+            url = search_url(query, site, page)
             async with DlsiteAPI(locale=locale) as api:
                 self._prepare(api)
                 async with api.get(url) as response:

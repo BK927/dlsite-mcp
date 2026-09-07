@@ -79,6 +79,77 @@ async def test_details_batch_is_bounded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mixed_batch_identifies_failed_product_and_keeps_success_cached():
+    instance, provider = service()
+    original = provider.get_work
+
+    async def maybe_missing(product_id, **options):
+        if product_id == "RJ99999999":
+            raise ServiceError(ErrorCode.NOT_FOUND, "Missing.", details={"reason": "unavailable"})
+        return await original(product_id, **options)
+
+    provider.get_work = maybe_missing
+    with pytest.raises(ServiceError) as caught:
+        await instance.work_get(["RJ01655815", "RJ99999999"], "summary", "ja_JP", "ko_KR", 1200)
+    assert caught.value.code is ErrorCode.NOT_FOUND
+    assert caught.value.details == {"product_id": "RJ99999999", "reason": "unavailable"}
+    retry = await instance.work_get("RJ01655815", "summary", "ja_JP", "ko_KR", 1200)
+    assert retry["data"]["product_id"] == "RJ01655815"
+    assert provider.work_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_metadata_warnings_survive_cache_and_are_not_exposed_as_internal_fields():
+    instance, provider = service()
+
+    async def incomplete(product_id, **options):
+        return {"product_id": product_id, "_warnings": ["Missing table."]}
+
+    provider.get_work = incomplete
+    for _ in range(2):
+        result = await instance.work_get("RJ01655815", "details", "ko_KR", "ko_KR", 1200)
+        assert "_warnings" not in result["data"]
+        assert result["meta"]["warnings"] == ["RJ01655815: Missing table."]
+
+
+@pytest.mark.asyncio
+async def test_search_reports_source_omissions_and_native_cross_storefront_results():
+    instance, provider = service()
+
+    async def native_results(query, **options):
+        return (
+            [
+                {
+                    "product_id": "RJ01655815",
+                    "review_count": None,
+                    "url": "https://www.dlsite.com/home/work/=/product_id/RJ01655815.html",
+                }
+            ],
+            False,
+        )
+
+    provider.search_page = native_results
+    result = await instance.search("東方", "maniax", "", 3, "ko_KR", "ko_KR")
+    assert result["data"]["applied_filters"] == {"work_category": "doujin", "sex_category": "male"}
+    assert result["data"]["result_sites"] == ["home"]
+    assert any("null does not mean zero" in w for w in result["meta"]["warnings"])
+    assert any("other storefront" in w for w in result["meta"]["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_unfiltered_old_search_cursor_cannot_continue_filtered_results():
+    instance, _ = service()
+    old = instance.cursor.encode(
+        scope="search",
+        filters={"query": "東方", "site": "books", "locale": "ja_JP", "price_locale": "ko_KR"},
+        state={"page": 1, "offset": 3},
+    )
+    with pytest.raises(ServiceError) as caught:
+        await instance.search("東方", "books", old, 3, "ja_JP", "ko_KR")
+    assert caught.value.code is ErrorCode.CURSOR_MISMATCH
+
+
+@pytest.mark.asyncio
 async def test_search_cursor_continues_without_skipping() -> None:
     instance, _ = service()
     first = await instance.search("asmr", "maniax", "", 10, "ja_JP", "ko_KR")

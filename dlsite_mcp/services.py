@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from urllib.parse import urlsplit
 
 from .cache import TtlLruCache
 from .contracts import (
@@ -15,6 +16,7 @@ from .contracts import (
 )
 from .cursor import CursorCodec
 from .provider import (
+    SEARCH_FILTERS,
     SUPPORTED_SITES,
     DlsiteProvider,
     normalize_maker_id,
@@ -80,9 +82,22 @@ class DlsiteService:
 
         async def bounded(product_id: str) -> dict[str, Any]:
             async with semaphore:
-                return await one(product_id)
+                try:
+                    return await one(product_id)
+                except ServiceError as exc:
+                    raise ServiceError(
+                        exc.code,
+                        exc.message,
+                        retryable=exc.retryable,
+                        schema_uri=exc.schema_uri,
+                        details={**exc.details, "product_id": product_id},
+                    ) from exc
 
-        items = list(await asyncio.gather(*(bounded(product_id) for product_id in ids)))
+        # Copy cached records before moving provider diagnostics into the envelope.
+        items = [dict(item) for item in await asyncio.gather(*(bounded(pid) for pid in ids))]
+        warnings = []
+        for product_id, item in zip(ids, items, strict=True):
+            warnings.extend(f"{product_id}: {warning}" for warning in item.pop("_warnings", []))
         untrusted = [
             "data.work_name",
             "data.work_name_masked",
@@ -99,6 +114,7 @@ class DlsiteService:
             "data.music[]",
             "data.writer[]",
             "data.genre[]",
+            "data.language",
             "data.label",
             "data.event[]",
             "data.work_image",
@@ -110,10 +126,12 @@ class DlsiteService:
                 items[0],
                 canonical_uri=f"dlsite://entity/work/{product_id}",
                 untrusted_fields=untrusted,
+                warnings=warnings,
             )
         return collection_envelope(
             items,
             data={"view": view},
+            warnings=warnings,
             untrusted_fields=[field.replace("data.", "items[].") for field in untrusted],
         )
 
@@ -315,7 +333,14 @@ class DlsiteService:
             )
         validate_locale(locale)
         validate_locale(price_locale)
-        filters = {"query": query, "site": site, "locale": locale, "price_locale": price_locale}
+        # Old cursors refer to unfiltered searches and must not continue a new scope.
+        filters = {
+            "query": query,
+            "site": site,
+            "locale": locale,
+            "price_locale": price_locale,
+            "scope_version": 2,
+        }
         state = (
             self.cursor.decode(cursor, scope="search", filters=filters)
             if cursor
@@ -350,10 +375,32 @@ class DlsiteService:
             if next_state
             else None
         )
+        result_sites = sorted(
+            {
+                parts[1]
+                for item in items
+                if len(parts := urlsplit(item.get("url") or "").path.split("/")) > 1 and parts[1]
+            }
+        )
+        warnings = []
+        if any(item.get("review_count") is None for item in items):
+            warnings.append(
+                "The search source did not expose a review count for some items; null does not mean zero."
+            )
+        if any(result_site != site for result_site in result_sites):
+            warnings.append(
+                "DLsite's section filters returned works with other storefront URLs; see result_sites and applied_filters."
+            )
         return collection_envelope(
             items,
             next_cursor=next_cursor,
-            data={"query": query, "site": site},
+            data={
+                "query": query,
+                "site": site,
+                "applied_filters": dict(SEARCH_FILTERS[site]),
+                "result_sites": result_sites,
+            },
             provider="dlsite-public-search",
+            warnings=warnings,
             untrusted_fields=["items[].title", "items[].maker_name", "items[].category"],
         )

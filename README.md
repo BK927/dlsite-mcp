@@ -36,6 +36,32 @@ comipo's separate client-rendered search is not exposed. Supported
 metadata/price locales are `ja_JP`, `en_US`, `ko_KR`, `zh_CN`, and `zh_TW`.
 Availability of translated metadata is determined by DLsite.
 
+Work and maker references must be a single ID or an absolute `dlsite.com` URL
+for that entity. Use an array for multiple works; a string containing several
+IDs is rejected. Work batches retain all-or-error semantics: an upstream
+failure includes the failing `details.product_id`, and successfully fetched
+records can still be reused from the cache on a subsequent request.
+
+Detailed work metadata is parsed in the requested language, including localized
+headings and dates. `description` is DLsite's meta-description summary with its
+site promotion removed, not the entire product page; `description_source`
+identifies this source. Unrecognized rows, failed field extraction, and absent
+detail tables produce `meta.warnings`. Summary view intentionally omits HTML-only
+detail fields. A null field does not by itself mean that parsing failed.
+
+Search applies DLsite's native category/audience filters, rather than relying on
+the storefront URL prefix. `data.site` is the requested section;
+`data.applied_filters` records the filters and `data.result_sites` records the
+storefronts of the returned items. For example, an adult storefront can include
+all-ages products for the same audience, and `books` is the adult comic section.
+Cross-storefront results are called out in `meta.warnings`. Search locales can
+also affect DLsite's language eligibility rules, not just displayed labels.
+
+Some localized search pages do not expose review counts. In that case the value
+remains null and a warning explains the source limitation; work lookup's
+`public_metrics.review_count` can supply the count separately. Search cursors
+created before the category-filter fix are rejected: restart without a cursor.
+
 ## Local stdio
 
 Python 3.11+ and [uv](https://docs.astral.sh/uv/) are recommended.

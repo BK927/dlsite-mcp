@@ -8,6 +8,7 @@ from dlsite_mcp.provider import (
     normalize_work_id,
     parse_review_payload,
     parse_search_html,
+    search_url,
     validate_locale,
 )
 
@@ -37,7 +38,10 @@ def test_reference_normalization() -> None:
         normalize_work_id("https://www.dlsite.com/maniax/work/=/product_id/rj294126.html")
         == "RJ294126"
     )
-    assert normalize_maker_id("profile/=/maker_id/rg51931.html") == "RG51931"
+    assert (
+        normalize_maker_id("https://www.dlsite.com/home/circle/profile/=/maker_id/rg51931.html")
+        == "RG51931"
+    )
 
 
 @pytest.mark.parametrize("value", ["", "not-an-id", "123456"])
@@ -45,6 +49,70 @@ def test_invalid_work_reference(value: str) -> None:
     with pytest.raises(ServiceError) as caught:
         normalize_work_id(value)
     assert caught.value.code is ErrorCode.INVALID_ARGUMENT
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "RJ01655815 RJ01690283",
+        "RJ01655815,RJ01690283",
+        "prefix RJ01655815",
+        "RJ01655815suffix",
+        "https://example.com/home/work/=/product_id/RJ01655815.html",
+        "https://www.dlsite.com.example.com/home/work/=/product_id/RJ01655815.html",
+        "https://www.dlsite.com@evil.example/home/work/=/product_id/RJ01655815.html",
+        "https://www.dlsite.com/anything?product_id=RJ01655815",
+    ],
+)
+def test_work_reference_never_silently_selects_an_id(reference):
+    with pytest.raises(ServiceError) as caught:
+        normalize_work_id(reference)
+    assert caught.value.code is ErrorCode.INVALID_ARGUMENT
+    if reference.startswith("RJ01655815 "):
+        assert "array" in caught.value.message
+
+
+def test_product_url_accepts_tracking_query_and_fragment():
+    assert (
+        normalize_work_id(
+            "https://www.dlsite.com/home/work/=/product_id/rj01655815.html/?locale=ko_KR#review"
+        )
+        == "RJ01655815"
+    )
+
+
+def test_maker_reference_rejects_external_host_and_multiple_ids():
+    for reference in (
+        "RG51931 RG23105",
+        "https://example.com/circle/profile/=/maker_id/RG51931.html",
+    ):
+        with pytest.raises(ServiceError):
+            normalize_maker_id(reference)
+
+
+@pytest.mark.parametrize(
+    ("site", "filters"),
+    [
+        ("home", "work_category/doujin/age_category/general"),
+        ("maniax", "work_category/doujin/sex_category/male"),
+        ("books", "work_category/books/sex_category/male"),
+        ("soft", "work_category/pc/age_category/general"),
+        ("pro", "work_category/pc/sex_category/male"),
+        ("appx", "work_category/app/sex_category/male"),
+    ],
+)
+def test_search_urls_use_native_section_filters_and_preserve_query(site, filters):
+    # Expected routes follow the public search form, not only the storefront path.
+    from urllib.parse import unquote_plus
+
+    url = search_url("東方 Project+C++/test", site, 1)
+    assert f"/fsr/=/{filters}/keyword/" in url
+    encoded = url.split("/keyword/", 1)[1].split("/per_page/", 1)[0]
+    assert "%20" not in encoded
+    assert "%2B" in encoded and "%2F" in encoded
+    assert unquote_plus(encoded) == "東方 Project+C++/test"
+    assert "/page/1" not in url
+    assert search_url("東方 Project+C++/test", site, 2) == url + "/page/2"
 
 
 def test_locale_is_strict() -> None:
