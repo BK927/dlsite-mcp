@@ -147,6 +147,13 @@ Live provider calls are not required by the test suite. DLsite HTML and public
 endpoints can change without notice; provider failures use stable MCP error
 codes and never expose request headers or secrets.
 
+All three tools advertise a typed `outputSchema` for their existing
+`structuredContent`. It describes the response envelope, pagination, source
+metadata and common work/search/maker fields. Provider extension fields remain
+available; fields inside data records can be absent when the byte budget compacts
+them. `isError` responses retain their separate error contract. The context audit
+includes these schemas within a 10,500-byte tool-list / 4,400-byte per-tool limit.
+
 ## Attribution
 
 `dlsite-async` is Copyright (c) 2021 byeonhyeok and distributed under the MIT

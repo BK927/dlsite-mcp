@@ -16,6 +16,7 @@ from .cache import TtlLruCache
 from .contracts import ErrorCode, ServiceError, error_result, success_result
 from .cursor import CursorCodec
 from .oauth import OAuthRuntime
+from .output_models import MakerOutput, SearchOutput, WorkOutput
 from .provider import DlsiteProvider
 from .services import DlsiteService
 
@@ -145,7 +146,6 @@ def create_server(dependencies: ServerDependencies, oauth: OAuthRuntime | None =
         description="Read public DLsite work details or cursor-paginated reviews.",
         annotations=READ_ONLY,
         meta=OAUTH_META,
-        structured_output=False,
     )
     async def dlsite_work_get(
         work: str | list[str],
@@ -155,7 +155,7 @@ def create_server(dependencies: ServerDependencies, oauth: OAuthRuntime | None =
         max_chars: TEXT_LIMIT = 1_200,
         cursor: str = "",
         limit: LIMIT_100 = 10,
-    ) -> CallToolResult:
+    ) -> Annotated[CallToolResult, WorkOutput]:
         return await invoke(
             service.work_get(work, view, locale, price_locale, max_chars, cursor, limit),
             "DLsite work data returned.",
@@ -166,7 +166,6 @@ def create_server(dependencies: ServerDependencies, oauth: OAuthRuntime | None =
         description="Search one public DLsite section by keyword with bounded pages and signed cursors.",
         annotations=READ_ONLY,
         meta=OAUTH_META,
-        structured_output=False,
     )
     async def dlsite_search(
         query: str,
@@ -175,7 +174,7 @@ def create_server(dependencies: ServerDependencies, oauth: OAuthRuntime | None =
         limit: LIMIT_30 = 20,
         locale: Literal["ja_JP", "en_US", "ko_KR", "zh_CN", "zh_TW"] = "ja_JP",
         price_locale: Literal["ja_JP", "en_US", "ko_KR", "zh_CN", "zh_TW"] = "ko_KR",
-    ) -> CallToolResult:
+    ) -> Annotated[CallToolResult, SearchOutput]:
         return await invoke(
             service.search(query, site, cursor, limit, locale, price_locale),
             "DLsite search results returned.",
@@ -186,12 +185,11 @@ def create_server(dependencies: ServerDependencies, oauth: OAuthRuntime | None =
         description="Read a public DLsite circle, brand, or publisher identity.",
         annotations=READ_ONLY,
         meta=OAUTH_META,
-        structured_output=False,
     )
     async def dlsite_maker_get(
         maker: str,
         locale: Literal["ja_JP", "en_US", "ko_KR", "zh_CN", "zh_TW"] = "ja_JP",
-    ) -> CallToolResult:
+    ) -> Annotated[CallToolResult, MakerOutput]:
         return await invoke(
             service.maker_get(maker, locale),
             "DLsite maker metadata returned.",
