@@ -1,11 +1,184 @@
-# DLsite MCP
+# DLsite MCP Server — Public Metadata, Reviews & Search
 
-Compact, read-only MCP server for public DLsite metadata. It uses
-[`dlsite-async`](https://github.com/bhrevol/dlsite-async) for work and maker
-lookups and small public adapters for keyword search and reviews.
+A compact, read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
+server for researching public DLsite listings with AI assistants. It retrieves
+work metadata, regional prices, ratings, creators, public review bodies, keyword
+search results, and circle, brand, or publisher profiles. Run it locally over
+stdio or self-host it over Streamable HTTP.
 
 No DLsite login is accepted or stored. Purchased works, downloads, wishlists,
-cart actions, and DLsite Play are deliberately out of scope.
+cart actions, and DLsite Play are deliberately out of scope. This project is not
+affiliated with DLsite or EISYS, Inc.
+
+## Use cases
+
+- Look up a work by a supported product ID or DLsite URL.
+- Summarize public metadata, price, rating, genres, creators, and sample links.
+- Traverse every public review page with signed continuation cursors.
+- Search a DLsite section and compare localized public results.
+- Resolve public circle, brand, and publisher profiles for catalog research.
+
+## Supported data and locales
+
+| Capability | Coverage |
+| --- | --- |
+| Work lookup | Public summary, detailed metadata, or reviews; batches of supported IDs are accepted. |
+| Search | `maniax`, `home`, `books`, `soft`, `pro`, and `appx`. |
+| Direct work sections | Search sections plus `comic`/comipo IDs such as `BJ370220`. |
+| Maker lookup | Public circle (`RG`), brand (`BG`), and publisher (`VG`) profiles. |
+| Locales | `ja_JP`, `en_US`, `ko_KR`, `zh_CN`, and `zh_TW`; availability depends on DLsite. |
+| Account access | None. The server cannot read purchases, downloads, wishlists, carts, or DLsite Play. |
+
+## Deployment options
+
+| Environment | Status | Best for |
+| --- | --- | --- |
+| Local stdio | Supported | The simplest setup for a desktop MCP client. |
+| Docker on a PC or home server | Supported | A private, always-on endpoint behind your HTTPS reverse proxy or tunnel. |
+| Raspberry Pi 4 Model B (2 GB RAM) | Tested hardware only | Uses the same Docker/home-server path. This records the test machine, not a recommendation, minimum requirement, or performance guarantee. |
+| GCP Cloud Run | Manual; not project-verified | A constrained single-instance remote endpoint. |
+| Cloudflare Workers | Not supported | This CPython/ASGI application is not Workers-native. |
+| Cloudflare Tunnel | Possible ingress only | The server still runs on your PC or home server; Tunnel does not run the MCP server. |
+
+Remote deployments make outbound public requests to DLsite. Hosting-provider
+egress can be rate-limited or blocked independently of this project, so verify
+the intended region and follow DLsite's terms before relying on a cloud host.
+
+## Local stdio
+
+Python 3.11+ and [uv](https://docs.astral.sh/uv/) are recommended.
+
+```sh
+git clone https://github.com/BK927/dlsite-mcp.git
+cd dlsite-mcp
+uv sync --extra dev
+uv run python -m dlsite_mcp.server
+```
+
+Example MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "dlsite-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/absolute/path/to/dlsite-mcp",
+        "python",
+        "-m",
+        "dlsite_mcp.server"
+      ]
+    }
+  }
+}
+```
+
+On Windows, use an absolute path such as `C:\\path\\to\\dlsite-mcp`.
+
+## Docker and home-server deployment
+
+The included image runs as a non-root user and serves Streamable HTTP on port
+8080. Keep the container bound to loopback and terminate HTTPS in a reverse proxy
+or private tunnel unless you have designed an equivalent network boundary.
+
+1. Copy `.env.example` to `.env` and set at least:
+
+   ```text
+   MCP_TRANSPORT=http
+   HOST=0.0.0.0
+   PORT=8080
+   MCP_ACCESS_TOKEN=<at least 32 random characters>
+   DLSITE_CURSOR_SECRET=<a different stable random secret>
+   PUBLIC_BASE_URL=https://mcp.example.com
+   ```
+
+2. Build and start the container:
+
+   ```sh
+   docker build -t dlsite-mcp .
+   docker run -d \
+     --name dlsite-mcp \
+     --restart unless-stopped \
+     --env-file .env \
+     -p 127.0.0.1:8080:8080 \
+     dlsite-mcp
+   ```
+
+3. Check the local health endpoint, then proxy the public HTTPS origin to port
+   8080 without buffering or truncating streaming responses:
+
+   ```sh
+   curl http://127.0.0.1:8080/healthz
+   ```
+
+The MCP endpoint is `/mcp`; `/healthz` does not require MCP credentials. Never
+commit `.env`, expose the container's plain HTTP port directly to the internet,
+or enable `MCP_ALLOW_UNAUTHENTICATED` on a public endpoint.
+
+**Test-hardware note:** this home-server path was tested on a Raspberry Pi 4
+Model B with 2 GB RAM. That is only the hardware used for testing; it is **not**
+a recommendation, a minimum requirement, or a performance guarantee.
+
+### ChatGPT OAuth
+
+For a personal ChatGPT custom MCP connection, set `MCP_OAUTH_ENABLED=true` and
+configure `PUBLIC_BASE_URL`, `MCP_OAUTH_LOGIN_SECRET`, and
+`MCP_OAUTH_SIGNING_SECRET` with distinct random values of at least 32 characters.
+Use the private login secret only on this server's authorization page. The OAuth
+client allowlist accepts only ChatGPT's published stable and connector-specific
+client IDs.
+
+## GCP Cloud Run
+
+Cloud Run can host the supplied HTTP container because it listens on `PORT=8080`
+and the MCP transport is stateless. The current Dockerfile does **not** install
+the optional Firestore dependency, however, so its OAuth authorization codes are
+held in one process's memory. Use one warm instance with this image:
+
+```sh
+gcloud builds submit \
+  --tag REGION-docker.pkg.dev/PROJECT/REPOSITORY/dlsite-mcp:1.1.1
+
+gcloud run deploy dlsite-mcp \
+  --image REGION-docker.pkg.dev/PROJECT/REPOSITORY/dlsite-mcp:1.1.1 \
+  --region REGION \
+  --port 8080 \
+  --min-instances 1 \
+  --max-instances 1 \
+  --set-env-vars MCP_TRANSPORT=http \
+  --set-secrets MCP_ACCESS_TOKEN=dlsite-mcp-access-token:latest,DLSITE_CURSOR_SECRET=dlsite-mcp-cursor-secret:latest \
+  --allow-unauthenticated
+```
+
+Create those Secret Manager secrets before deploying. `--allow-unauthenticated`
+only lets the request reach the container; the MCP gateway still requires its
+bearer token or OAuth. Never combine public Cloud Run ingress with
+`MCP_ALLOW_UNAUTHENTICATED=true`.
+
+After Cloud Run reports the stable HTTPS service URL, set `PUBLIC_BASE_URL` to
+that exact origin. If you enable ChatGPT OAuth, also attach the login and signing
+secrets through Secret Manager. A container replacement can invalidate an
+outstanding in-memory authorization code; repeat the connection flow if needed.
+Multi-instance OAuth requires a custom image that actually installs the `gcp`
+extra and `MCP_OAUTH_STORE=firestore`; the provided image is not
+multi-instance-ready. Always set a stable `DLSITE_CURSOR_SECRET` so continuation
+cursors survive process replacement.
+
+## Cloudflare: Workers versus Tunnel
+
+Cloudflare Workers cannot directly run this repository. The application expects
+normal CPython, Uvicorn/ASGI, and packages with native runtime requirements, and
+it has no Wrangler Worker entry point. Cloudflare Containers are also untested
+and are not a supported deployment target.
+
+A Cloudflare Tunnel may instead publish the `/mcp` and OAuth routes from a
+Docker container that continues to run on your own PC or home server. Cloudflare
+is only the HTTPS ingress in that arrangement. Preserve the exact public origin,
+Host header, OAuth discovery paths, and authentication controls, and validate the
+complete connection before treating it as production-ready.
 
 ## Public tools
 
@@ -21,6 +194,8 @@ context stays small. Successes use a stable `structuredContent` envelope;
 human-readable `content` is only one line. Publisher-controlled fields are
 listed under `meta.untrusted_fields`.
 
+## Protocol behavior and data quality
+
 Use `dlsite_work_get` with `view="reviews"` for review bodies. A response may
 return fewer items than `limit` to keep each review intact inside the MCP byte
 budget; follow `page.next_cursor` until `data.complete` is true. There is no
@@ -29,12 +204,6 @@ The cursor also records the last review ID and the initial total to reduce
 duplicates or gaps if new reviews arrive during a long traversal. Review text
 defaults to 1,200 characters per item and can be raised to 4,000. Cursors expire
 after 24 hours by default; `DLSITE_CURSOR_TTL_SECONDS` can extend this to 7 days.
-
-Search supports `maniax`, `home`, `books`, `soft`, `pro`, and `appx`. Direct
-work lookup also supports `comic`/comipo product IDs such as `BJ370220`;
-comipo's separate client-rendered search is not exposed. Supported
-metadata/price locales are `ja_JP`, `en_US`, `ko_KR`, `zh_CN`, and `zh_TW`.
-Availability of translated metadata is determined by DLsite.
 
 Work and maker references must be a single ID or an absolute `dlsite.com` URL
 for that entity. Use an array for multiple works; a string containing several
@@ -70,56 +239,12 @@ remains null and a warning explains the source limitation; work lookup's
 `public_metrics.review_count` can supply the count separately. Search cursors
 created before the category-filter fix are rejected: restart without a cursor.
 
-## Local stdio
-
-Python 3.11+ and [uv](https://docs.astral.sh/uv/) are recommended.
-
-```powershell
-uv sync --extra dev
-uv run python -m dlsite_mcp.server
-```
-
-Example MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "dlsite-mcp": {
-      "type": "stdio",
-      "command": "uv",
-      "args": [
-        "run",
-        "--directory",
-        "C:\\path\\to\\dlsite-mcp",
-        "python",
-        "-m",
-        "dlsite_mcp.server"
-      ]
-    }
-  }
-}
-```
-
-## Streamable HTTP and ChatGPT OAuth
-
-Copy `.env.example`, set secrets, and run with `MCP_TRANSPORT=http`. HTTP mode
-serves `/mcp` and `/healthz`. It requires a static bearer token unless
-`MCP_ALLOW_UNAUTHENTICATED=true`. For ChatGPT custom MCP registration, enable
-the included personal OAuth flow and use the same private value as
-`MCP_OAUTH_LOGIN_SECRET` on the authorization page.
-
-```text
-MCP_TRANSPORT=http
-MCP_ACCESS_TOKEN=<at least 32 random characters>
-PUBLIC_BASE_URL=https://your-host.example
-MCP_OAUTH_ENABLED=true
-MCP_OAUTH_LOGIN_SECRET=<at least 32 random characters>
-MCP_OAUTH_SIGNING_SECRET=<different random secret, at least 32 characters>
-```
-
-The OAuth client allowlist accepts only ChatGPT's published stable and
-connector-specific client IDs. On a multi-instance deployment, select the
-optional Firestore authorization-code store.
+All three tools advertise a typed `outputSchema` for their existing
+`structuredContent`. It describes the response envelope, pagination, source
+metadata, and common work/search/maker fields. Provider extension fields remain
+available; fields inside data records can be absent when the byte budget compacts
+them. `isError` responses retain their separate error contract. The context audit
+includes these schemas within a 10,500-byte tool-list / 4,400-byte per-tool limit.
 
 ## Plugin packaging
 
@@ -137,7 +262,7 @@ new Codex task after synchronization so the new tool registry is loaded.
 
 ## Development
 
-```powershell
+```sh
 uv run ruff check .
 uv run pytest -q
 uv run python scripts/audit_context.py
@@ -147,18 +272,35 @@ Live provider calls are not required by the test suite. DLsite HTML and public
 endpoints can change without notice; provider failures use stable MCP error
 codes and never expose request headers or secrets.
 
-All three tools advertise a typed `outputSchema` for their existing
-`structuredContent`. It describes the response envelope, pagination, source
-metadata and common work/search/maker fields. Provider extension fields remain
-available; fields inside data records can be absent when the byte budget compacts
-them. `isError` responses retain their separate error contract. The context audit
-includes these schemas within a 10,500-byte tool-list / 4,400-byte per-tool limit.
+## FAQ
 
-## Attribution
+### Does this require a DLsite account?
 
-`dlsite-async` is Copyright (c) 2021 byeonhyeok and distributed under the MIT
+No. It only reads public catalog and review data and does not accept DLsite
+credentials.
+
+### Can it download purchased works or access my wishlist?
+
+No. Purchases, downloads, wishlists, carts, login, and DLsite Play are outside
+the server's scope.
+
+### Is this an official DLsite API?
+
+No. It is an independent MCP server that reads public DLsite data. Page and
+endpoint changes can temporarily affect provider availability.
+
+### Can I deploy it on Cloud Run or Cloudflare Workers?
+
+The supplied container can be run as a constrained single-instance Cloud Run
+service as described above. Direct Cloudflare Workers deployment is not
+supported; Cloudflare Tunnel is only an optional path to a server running
+elsewhere.
+
+## Attribution and license
+
+`dlsite-async` is Copyright (c) 2022 byeonhyeok and distributed under the MIT
 License. This project depends on the published package and does not include its
 login or DLsite Play modules in the MCP surface.
 
 See `THIRD_PARTY_NOTICES.md` for transport-pattern attribution and service
-notices. This project is not affiliated with DLsite or EISYS, Inc.
+notices. The project code is available under the [MIT License](LICENSE).

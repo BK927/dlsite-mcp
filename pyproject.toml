@@ -1,13 +1,24 @@
 [project]
 name = "dlsite-mcp"
 version = "1.1.1"
-description = "Compact read-only MCP server for public DLsite works, reviews, search, and makers."
+description = "Read-only DLsite MCP server for public metadata, reviews, prices, search, and maker profiles."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{ name = "BK927" }]
-keywords = ["dlsite", "mcp", "model-context-protocol", "doujin"]
+keywords = [
+    "dlsite",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "doujin",
+    "product-metadata",
+    "reviews",
+    "price",
+    "rating",
+    "ai-agents",
+]
 dependencies = [
     "beautifulsoup4==4.14.3",
     "dlsite-async==0.10.2",
@@ -30,6 +41,8 @@ dlsite-mcp = "dlsite_mcp.server:main"
 [project.urls]
 Homepage = "https://github.com/BK927/dlsite-mcp"
 Repository = "https://github.com/BK927/dlsite-mcp"
+Documentation = "https://github.com/BK927/dlsite-mcp#readme"
+Issues = "https://github.com/BK927/dlsite-mcp/issues"
 Upstream = "https://github.com/bhrevol/dlsite-async"
 
 [build-system]

@@ -1,7 +1,7 @@
 {
   "name": "dlsite-mcp",
   "version": "1.1.1",
-  "description": "Read-only public DLsite work, review, search, price, rating, and maker research.",
+  "description": "Read-only DLsite MCP server for public metadata, reviews, prices, search, and maker profiles.",
   "author": {
     "name": "BK927",
     "url": "https://github.com/BK927"
@@ -13,12 +13,15 @@
     "dlsite",
     "doujin",
     "games",
-    "mcp"
+    "mcp",
+    "mcp-server",
+    "reviews",
+    "product-metadata"
   ],
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "DLsite MCP",
-    "shortDescription": "Research public DLsite works, reviews, prices, ratings, and makers.",
+    "displayName": "DLsite MCP Server — Public Metadata, Reviews & Search",
+    "shortDescription": "Research public DLsite metadata, reviews, prices, search results, and makers.",
     "longDescription": "A compact, read-only DLsite research plugin for public work metadata, full cursor-paginated review corpora, keyword search, regional prices, ratings, creators, genres, samples, circles, brands, and publishers. No DLsite login or account access.",
     "developerName": "BK927",
     "category": "Productivity",
@@ -29,8 +32,7 @@
     "defaultPrompt": [
       "Find this DLsite work and summarize its public metadata.",
       "Read this DLsite work's public reviews and continue through every page.",
-      "Search DLsite for this title and compare the results.",
-      "Check this DLsite work's KRW price, rating, and creators."
+      "Search DLsite for this title and compare the results."
     ]
   }
 }
