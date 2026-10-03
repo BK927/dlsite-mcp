@@ -131,7 +131,13 @@ Use the private login secret only on this server's authorization page. The OAuth
 client allowlist accepts only ChatGPT's published stable and connector-specific
 client IDs.
 
+### Shared passkey login
+
+Personal home-server deployments may use [shared passkey login](docs/PASSKEY_LOGIN.md)
+for MCP connection approval while keeping DLsite's existing OAuth tokens and scopes.
+
 ## GCP Cloud Run
+
 
 Cloud Run can host the supplied HTTP container because it listens on `PORT=8080`
 and the MCP transport is stateless. The current Dockerfile does **not** install
